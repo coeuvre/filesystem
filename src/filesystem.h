@@ -7,6 +7,18 @@ enum FS_FILE_TYPE {
     FS_FILE,
 };
 
+#if 0
+struct fs_delegate {
+    int (*process)(const char *pathname);
+    int (*cd)(const char *pathname);
+    int (*cwd)(char *buf, size_t count);
+    int (*open)(const char *filename);
+    int (*close)(int fd);
+    ssize_t (*write)(int fd, const void *buf, size_t count);
+    ssize_t (*read)(int fd, void *buf, size_t count);
+};
+#endif
+
 int fs_init(int argc, char **argv);
 
 void fs_term(void);
