@@ -20,21 +20,11 @@
 #endif
 
 
-struct file {
-    struct zip      *parent;
-
-    int isinzip;
-    union {
-        struct zip_file *zfile;
-        FILE            *file;
-    };
-};
-
 struct directory {
     char name[NAME_MAX];
 
-    int iszip;
     int isopened;
+    int iszip;
     union {
         struct zip *zip;
         DIR        *dir;
@@ -279,15 +269,26 @@ static int fs_cd_file_zip(struct directory *parent, const char *filename)
     }
 }
 
+static int is_cwd_zip(void)
+{
+    if (sf_list_cnt(&fs.directories)) {
+        struct directory *d;
+
+        d = sf_list_tail(&fs.directories);
+        if (d->iszip) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int fs_cd_file(const char *filename)
 {
     struct directory d;
 
-    if (sf_list_cnt(&fs.directories)) {
-        struct directory *ptr = sf_list_tail(&fs.directories);
-        if (ptr->iszip) {
-            return fs_cd_file_zip(ptr, filename);
-        }
+    if (is_cwd_zip()) {
+        return fs_cd_file_zip(sf_list_tail(&fs.directories), filename);
     }
 
     if (strcmp(filename, "..") == 0) {
@@ -440,5 +441,85 @@ int fs_file_walker(int (*func)(int type, const char *filename, void *arg),
         return fs_file_walker_dir(d, func, arg);
     } else {
         return fs_file_walker_zip(d, func, arg);
+    }
+}
+
+static int fs_file_open_in_zip(struct fs_file *f, const char *filename)
+{
+    struct directory *d;
+    char buf[NAME_MAX];
+
+    d = sf_list_tail(&fs.directories);
+
+    get_zip_cwd(buf, NAME_MAX);
+    strcat(buf, filename);
+
+    f->isinzip = 1;
+    if ((f->zip_file = zip_fopen(d->zip, buf, 0)) == NULL) {
+        sf_log(SF_LOG_ERR, "failed to open %s", filename);
+        return SF_ERR;
+    }
+
+    return SF_OK;
+}
+
+int fs_file_open(struct fs_file *f, const char *filename, const char *mode)
+{
+    if (is_cwd_zip()) {
+        return fs_file_open_in_zip(f, filename);
+    }
+
+    f->isinzip = 0;
+    f->file = fopen(filename, mode);
+
+    return f->file ? 0 : -1;
+}
+
+int fs_file_close(struct fs_file *f)
+{
+    if (f->isinzip) {
+        return zip_fclose(f->zip_file);
+    } else {
+        return fclose(f->file);
+    }
+}
+
+ssize_t fs_file_write(struct fs_file *f, const void *buf, size_t count)
+{
+    if (f->isinzip) {
+        /* for now, don't support for zip writing */
+        assert(0);
+    } else {
+        return fwrite(buf, count, 1, f->file);
+    }
+}
+
+ssize_t fs_file_read(const struct fs_file *f, void *buf, size_t count)
+{
+    if (f->isinzip) {
+        return zip_fread(f->zip_file, buf, count);
+    } else {
+        return fread(buf, count, 1, f->file);
+    }
+}
+
+size_t fs_file_size(const char *filename)
+{
+    if (is_cwd_zip()) {
+        struct directory *d;
+        struct zip_stat sb;
+        char buf[NAME_MAX];
+
+        d = sf_list_tail(&fs.directories);
+
+        get_zip_cwd(buf, NAME_MAX);
+        strcat(buf, filename);
+
+        zip_stat(d->zip, buf, 0, &sb);
+        return sb.size;
+    } else {
+        struct stat sb;
+        stat(filename, &sb);
+        return sb.st_size;
     }
 }

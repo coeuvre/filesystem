@@ -7,6 +7,15 @@ enum FS_FILE_TYPE {
     FS_FILE,
 };
 
+struct fs_file {
+    int             isinzip;
+
+    union {
+        struct zip_file *zip_file;
+        FILE            *file;
+    };
+};
+
 #if 0
 struct fs_delegate {
     int (*process)(const char *pathname);
@@ -33,14 +42,15 @@ int fs_cwd(char *buf, size_t count);
 int fs_file_walker(int (*func)(int type, const char *filename, void *arg),
                    void *arg);
 
-int fs_open(const char *filename);
+int fs_file_open(struct fs_file *f, const char *filename, const char *mode);
 
-int fs_close(int fd);
+int fs_file_close(struct fs_file *f);
 
-ssize_t fs_write(int fd, const void *buf, size_t count);
+ssize_t fs_file_write(struct fs_file *f, const void *buf, size_t count);
 
-ssize_t fs_read(int fd, void *buf, size_t count);
+ssize_t fs_file_read(const struct fs_file *f, void *buf, size_t count);
 
+size_t fs_file_size(const char *filename);
 
 
 #endif /* FILESYSTEM_H */
