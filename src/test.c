@@ -4,7 +4,6 @@
 #include <time.h>
 
 #include <unistd.h>
-#include <linux/limits.h>
 
 #include <sf/utils.h>
 

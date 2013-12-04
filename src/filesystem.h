@@ -2,6 +2,13 @@
 #define FILESYSTEM_H
 
 
+#ifdef __WIN32__
+#include <stdlib.h>
+#define NAME_MAX 256
+#else
+#include <linux/limits.h>
+#endif
+
 enum FS_FILE_TYPE {
     FS_DIR,
     FS_FILE,

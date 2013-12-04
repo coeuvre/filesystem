@@ -3,7 +3,6 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <linux/limits.h>
 
 #include <zip.h>
 
@@ -63,7 +62,7 @@ static int get_directory_pathname(struct directory *begin,
 
         ptr = sf_list_iter_elt(&iter);
         len = strlen(ptr->name) + 1;
-        n = snprintf(buf, count, "%s%c", ptr->name, seperator);
+        n = snprintf(buf, count, "%s/", ptr->name);
         nwritten += n;
         if (n != len) {
             break;
@@ -118,9 +117,8 @@ static int directory_open(struct directory *d)
     } else {
         char buf[PATH_MAX];
 
-        buf[0] = '/';
-        get_directory_pathname(sf_list_head(&fs.directories), d, buf + 1,
-                               PATH_MAX - 1);
+        get_directory_pathname(sf_list_head(&fs.directories), d, buf,
+                               PATH_MAX);
         if ((d->dir = opendir(buf)) == NULL) {
             sf_log(SF_LOG_ERR, "failed to open directory %s", d->name);
             return SF_ERR;
@@ -163,7 +161,11 @@ int fs_init(int argc, char **argv)
     def.free = directory_close;
     sf_list_init(&fs.directories, &def);
 
+#ifdef __WIN32__
+    if (argv[0][1] == ':') {
+#else
     if (argv[0][0] == '/') {
+#endif
         strncpy(buf, argv[0], PATH_MAX);
     } else {
         len = PATH_MAX;
@@ -193,12 +195,6 @@ void fs_term(void)
 
 int fs_cwd(char *buf, size_t count)
 {
-    if (count < 2) {
-        buf[0] = '\0';
-        return 0;
-    }
-    buf[0] = '/';
-    buf[1] = '\0';
     return get_directory_pathname(sf_list_head(&fs.directories),
                                   sf_list_tail(&fs.directories),
                                   buf, count - 1);
@@ -244,7 +240,7 @@ static int fs_cd_file_zip(struct directory *parent, const char *filename)
     get_zip_cwd(buf, NAME_MAX);
     strcat(buf, filename);
     len = strlen(buf);
-    buf[len++] = seperator;
+    buf[len++] = '/';
     buf[len] = '\0';
 
     nentries = zip_get_num_entries(parent->zip, 0);
@@ -311,7 +307,7 @@ static int fs_cd_file(const char *filename)
 
 int fs_cd(const char *pathname)
 {
-    if (pathname[0] == '/') {
+    if (pathname[0] == seperator || pathname[0] == '/') {
     /* absolute path */
         struct directory d;
 
@@ -323,6 +319,19 @@ int fs_cd(const char *pathname)
         if (pathname[1] != '\0') {
             fs_cd(pathname + 1);
         }
+#ifdef __WIN32__
+    } else if (pathname[1] == ':') {
+        char buf[3];
+
+        snprintf(buf, 3, "%c:", pathname[0]);
+        sf_list_clear(&fs.directories);
+        chdir(buf);
+        if (pathname[2] != '\0') {
+            fs_cd(pathname + 2);
+        } else {
+            fs_cd("/");
+        }
+#endif
     } else {
     /* relative path */
         char buf[PATH_MAX];
@@ -403,7 +412,7 @@ static int fs_file_walker_zip(struct directory *d,
             if (*filename == '\0') {
                 continue;
             }
-            if ((ptr = strchr(filename, seperator)) == NULL) {
+            if ((ptr = strchr(filename, '/')) == NULL) {
                 if ((ret = func(FS_FILE, filename, arg)) != SF_OK) {
                     break;
                 }
@@ -489,6 +498,7 @@ ssize_t fs_file_write(struct fs_file *f, const void *buf, size_t count)
     if (f->isinzip) {
         /* for now, don't support for zip writing */
         assert(0);
+        return 0;
     } else {
         return fwrite(buf, count, 1, f->file);
     }
